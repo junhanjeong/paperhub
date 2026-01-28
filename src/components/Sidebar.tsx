@@ -5,6 +5,7 @@ import * as Icons from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { conferences } from "@/data/conferences";
+import { Chatbot } from "./Chatbot";
 
 interface SidebarProps {
     isOpen: boolean;
@@ -99,11 +100,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     const displayTime = isLocalMode ? (currentTime || new Date()) : aoeTime;
 
     const calculateGoalCountdown = () => {
-        if (!isMounted) return { d: "00", h: "00", m: "00", s: "00" };
-        const target = new Date(goal.date);
-        const diff = target.getTime() - aoeTime.getTime();
-        if (diff <= 0) return { d: "00", h: "00", m: "00", s: "00" };
-
+        const target = new Date(goal.date + "T23:59:59").getTime();
+        const diff = Math.max(0, target - (currentTime?.getTime() || Date.now()));
         return {
             d: String(Math.floor(diff / (1000 * 60 * 60 * 24))).padStart(2, '0'),
             h: String(Math.floor((diff / (1000 * 60 * 60)) % 24)).padStart(2, '0'),
@@ -130,7 +128,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         setTodos(todos.filter((_, i) => i !== index));
     };
 
-    const titles = ["Focus", "Schedule", "Workspace"];
+    const titles = ["Focus", "Schedule", "Workspace", "AI Assistant"];
 
     return (
         <>
@@ -147,18 +145,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             <div
                 id="schedule-sidebar"
                 className={cn(
-                    "fixed top-0 right-0 h-full w-[420px] z-[150] border-l border-white/20 flex flex-col p-6 overflow-y-auto shadow-2xl transition-transform duration-400 ease-[cubic-bezier(0.4,0,0.2,1)]",
+                    "fixed top-0 right-0 h-full w-[450px] z-[150] border-l border-white/20 flex flex-col p-6 overflow-hidden shadow-2xl transition-transform duration-400 ease-[cubic-bezier(0.4,0,0.2,1)] bg-white/80 backdrop-blur-xl",
                     isOpen ? "translate-x-0" : "translate-x-full"
                 )}
             >
                 {/* Header */}
-                <div className="flex items-center justify-between mb-10 shrink-0 relative min-h-[40px]">
+                <div className="flex items-center justify-between mb-8 shrink-0 relative min-h-[40px]">
                     <h3 className="font-black text-slate-400 text-[10px] uppercase tracking-[0.2em]">
                         {titles[activePage - 1]}
                     </h3>
 
                     <div className="flex gap-2 bg-white/60 p-2 rounded-full border border-slate-100 shadow-sm absolute left-1/2 -translate-x-1/2">
-                        {[1, 2, 3].map((num) => (
+                        {[1, 2, 3, 4].map((num) => (
                             <div
                                 key={num}
                                 className={cn("page-dot", activePage === num && "active")}
@@ -173,7 +171,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                 </div>
 
                 {/* Content Pages */}
-                <div className="flex-1">
+                <div className={cn("flex-1 min-h-0", activePage !== 4 && "overflow-y-auto", activePage === 4 && "flex flex-col")}>
                     {activePage === 1 && (
                         <div className="space-y-5 animate-fadeIn">
                             {/* Focus Garden */}
@@ -419,10 +417,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                                 <textarea
                                     value={memo}
                                     onChange={(e) => setMemo(e.target.value)}
-                                    className="flex-1 w-full p-4 text-sm bg-orange-50/20 border border-orange-100 rounded-2xl outline-none focus:border-orange-300 resize-none leading-relaxed text-slate-700 min-h-[250px]"
+                                    className="flex-1 w-full p-4 text-sm bg-orange-50/20 border border-orange-100 rounded-2xl outline-none focus:border-orange-300 resize-none leading-relaxed text-slate-700 min-h-[150px]"
                                     placeholder="연구 아이디어나 간단한 메모를 남겨보세요..."
                                 />
                             </div>
+                        </div>
+                    )}
+
+                    {activePage === 4 && (
+                        <div className="flex-1 flex flex-col min-h-0 animate-fadeIn pb-4">
+                            <Chatbot isInline={true} />
                         </div>
                     )}
                 </div>
