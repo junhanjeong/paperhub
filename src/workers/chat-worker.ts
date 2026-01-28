@@ -41,13 +41,17 @@ self.onmessage = async (e: MessageEvent) => {
         const { messages, systemPrompt } = data;
 
         try {
-            // OpenAI 호환 메시지 형식으로 변환
-            const chatMessages: webllm.ChatCompletionMessageParam[] = [
-                { role: "system", content: systemPrompt },
-                ...messages.map((m: any) => ({
+            // OpenAI 호환 메시지 형식으로 변환 (시스템 메시지는 제외하고 우리가 직접 추가)
+            const userAssistantMessages = messages
+                .filter((m: any) => m.role === "user" || m.role === "assistant")
+                .map((m: any) => ({
                     role: m.role as "user" | "assistant",
                     content: m.content
-                }))
+                }));
+
+            const chatMessages: webllm.ChatCompletionMessageParam[] = [
+                { role: "system", content: systemPrompt },
+                ...userAssistantMessages
             ];
 
             // 스트리밍 생성
