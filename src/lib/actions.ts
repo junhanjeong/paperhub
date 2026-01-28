@@ -124,14 +124,14 @@ export async function getLikesAction(toolId: number) {
     }
 }
 
-export async function toggleLikeAction(toolId: number, currentLikes: number) {
+export async function toggleLikeAction(toolId: number, currentLikes: number, isIncrement: boolean) {
     try {
+        const newCount = isIncrement ? currentLikes + 1 : Math.max(0, currentLikes - 1);
         const { error } = await supabase
             .from('likes')
-            .upsert({ tool_id: toolId, count: currentLikes + 1 }, { onConflict: 'tool_id' });
+            .upsert({ tool_id: toolId, count: newCount }, { onConflict: 'tool_id' });
 
         if (error) throw new Error("데이터베이스 연결 실패: 좋아요를 반영할 수 없습니다.");
-        revalidatePath("/");
     } catch (e: any) {
         throw e;
     }

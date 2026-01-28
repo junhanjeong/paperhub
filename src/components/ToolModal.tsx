@@ -10,6 +10,8 @@ interface ToolModalProps {
     onClose: () => void;
     isLiked: boolean;
     onToggleLike: (id: number) => void;
+    initialLikeCount: number;
+    initialCommentCount: number;
 }
 
 import { getCommentsAction, addCommentAction, deleteCommentAction, getLikesAction } from "@/lib/actions";
@@ -19,6 +21,8 @@ export const ToolModal: React.FC<ToolModalProps> = ({
     onClose,
     isLiked,
     onToggleLike,
+    initialLikeCount,
+    initialCommentCount,
 }) => {
     const tool = toolsData.find((t) => t.id === toolId);
     const [comments, setComments] = useState<{ id: string; nick: string; text: string; date: string; password?: string }[]>([]);
@@ -26,7 +30,15 @@ export const ToolModal: React.FC<ToolModalProps> = ({
     const [password, setPassword] = useState("");
     const [commentText, setCommentText] = useState("");
     const [isLoading, setIsLoading] = useState(true);
-    const [likeCount, setLikeCount] = useState(tool?.likes || 0);
+    const [likeCount, setLikeCount] = useState(initialLikeCount);
+    // 댓글 수도 초기값을 보여주기 위해 상태 추가
+    const [commentCount, setCommentCount] = useState(initialCommentCount);
+
+    // 프롭스 변경 시 상태 동기화
+    useEffect(() => {
+        setLikeCount(initialLikeCount);
+        setCommentCount(initialCommentCount);
+    }, [initialLikeCount, initialCommentCount]);
 
     // Calculator State
     const [baseValue, setBaseValue] = useState("");
@@ -49,6 +61,7 @@ export const ToolModal: React.FC<ToolModalProps> = ({
                     password: c.password,
                     date: new Date(c.created_at).toLocaleString('ko-KR')
                 })));
+                setCommentCount(serverComments.length);
 
                 const lCount = await getLikesAction(toolId);
                 if (lCount > 0) setLikeCount(lCount);
@@ -62,12 +75,24 @@ export const ToolModal: React.FC<ToolModalProps> = ({
 
         loadData();
 
-        const handleLikeUpdate = async () => {
-            const lCount = await getLikesAction(toolId);
-            if (lCount > 0) setLikeCount(lCount);
+        // 메인 페이지나 다른 곳에서 변경된 수치를 즉시 반영
+        const handleLikeUpdate = (e: any) => {
+            if (e.detail?.count !== undefined) {
+                setLikeCount(e.detail.count);
+            }
         };
+        const handleCommentUpdate = (e: any) => {
+            if (e.detail?.count !== undefined) {
+                setCommentCount(e.detail.count);
+            }
+        };
+
         window.addEventListener(`likeUpdated-${toolId}`, handleLikeUpdate);
-        return () => window.removeEventListener(`likeUpdated-${toolId}`, handleLikeUpdate);
+        window.addEventListener(`commentUpdated-${toolId}`, handleCommentUpdate);
+        return () => {
+            window.removeEventListener(`likeUpdated-${toolId}`, handleLikeUpdate);
+            window.removeEventListener(`commentUpdated-${toolId}`, handleCommentUpdate);
+        };
     }, [toolId]);
 
     if (!tool) return null;
@@ -80,33 +105,47 @@ export const ToolModal: React.FC<ToolModalProps> = ({
             return;
         }
 
-        const commentData = {
+        const tempId = Math.random().toString(36).substring(2, 9);
+        const optimisticComment = {
+            id: tempId,
             nick: nick || "연구자",
             text: commentText,
             password: password,
+            date: new Date().toLocaleString('ko-KR')
         };
 
+        // UI 즉시 반영 (낙관적 업데이트)
+        const previousComments = [...comments];
+        setComments([optimisticComment, ...comments]);
+
+        // 입력창 즉시 비우기
+        const savedNick = nick;
+        const savedText = commentText;
+        const savedPw = password;
+        setNick("");
+        setPassword("");
+        setCommentText("");
+
         try {
-            const result = await addCommentAction(toolId, commentData);
+            const result = await addCommentAction(toolId, {
+                nick: optimisticComment.nick,
+                text: optimisticComment.text,
+                password: optimisticComment.password
+            });
+
             if (result && result.success) {
-                // 목록 갱신
-                const serverComments = await getCommentsAction(toolId);
-                setComments(serverComments.map((c: any) => ({
-                    id: c.id,
-                    nick: c.nick,
-                    text: c.text,
-                    password: c.password,
-                    date: new Date(c.created_at).toLocaleString('ko-KR')
-                })));
-
-                // 메인 페이지 카운트 업데이트를 위한 이벤트 발생
-                window.dispatchEvent(new CustomEvent(`commentUpdated-${toolId}`));
-
-                setNick("");
-                setPassword("");
-                setCommentText("");
+                window.dispatchEvent(new CustomEvent(`commentUpdated-${toolId}`, {
+                    detail: { count: comments.length + 1 }
+                }));
+            } else {
+                throw new Error("서버 저장 실패");
             }
         } catch (e: any) {
+            // 실패 시 롤백
+            setComments(previousComments);
+            setNick(savedNick);
+            setCommentText(savedText);
+            setPassword(savedPw);
             alert(e.message || "댓글 등록 중 오류가 발생했습니다.");
         }
     };
@@ -115,24 +154,24 @@ export const ToolModal: React.FC<ToolModalProps> = ({
         const inputPw = prompt("비밀번호를 입력하세요:");
         if (inputPw === null) return;
 
+        const previousComments = [...comments];
+        const updatedComments = comments.filter(c => c.id !== id);
+
+        // UI 즉시 삭제 (낙관적 업데이트)
+        setComments(updatedComments);
+
         try {
             const result = await deleteCommentAction(id, inputPw);
             if (result && result.success) {
-                const serverComments = await getCommentsAction(toolId);
-                setComments(serverComments.map((c: any) => ({
-                    id: c.id,
-                    nick: c.nick,
-                    text: c.text,
-                    password: c.password,
-                    date: new Date(c.created_at).toLocaleString('ko-KR')
-                })));
-
-                // 메인 페이지 카운트 업데이트를 위한 이벤트 발생
-                window.dispatchEvent(new CustomEvent(`commentUpdated-${toolId}`));
-            } else if (result && !result.success) {
-                alert(result.message);
+                window.dispatchEvent(new CustomEvent(`commentUpdated-${toolId}`, {
+                    detail: { count: updatedComments.length }
+                }));
+            } else {
+                if (result && !result.success) alert(result.message);
+                setComments(previousComments); // 롤백
             }
         } catch (e: any) {
+            setComments(previousComments); // 롤백
             alert(e.message || "댓글 삭제 중 오류가 발생했습니다.");
         }
     };
@@ -310,7 +349,7 @@ export const ToolModal: React.FC<ToolModalProps> = ({
                                 <Icons.MessageCircle className="w-4 h-4 text-emerald-500" /> Discussion
                             </h4>
                             <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md">
-                                {comments.length} comments
+                                {commentCount} comments
                             </span>
                         </div>
 

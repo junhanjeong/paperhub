@@ -35,27 +35,20 @@ export const ToolCard: React.FC<ToolCardProps> = ({
     }, [initialCommentCount, initialLikeCount]);
 
     useEffect(() => {
-        const fetchCounts = async () => {
-            try {
-                const cCount = await getCommentCountAction(tool.id);
-                setCommentCount(cCount);
-
-                const lCount = await getLikesAction(tool.id);
-                // DB에 값이 있으면 쓰고, 없으면 기본값(tool.likes) 사용
-                if (lCount > 0) setLikeCount(lCount);
-                else setLikeCount(tool.likes);
-            } catch (e) {
-                console.error("Counts fetch error:", e);
-            }
+        // 모달/메인에서 발생한 변경사항은 이벤트 데이터를 통해 즉시 반영 (네트워크 요청 X)
+        const handleCommentUpdate = (e: any) => {
+            if (e.detail?.count !== undefined) setCommentCount(e.detail.count);
+        };
+        const handleLikeUpdate = (e: any) => {
+            if (e.detail?.count !== undefined) setLikeCount(e.detail.count);
         };
 
-        // 모달에서 댓글이 달리거나 삭제되었을 때만 딱 한 번 실행
-        window.addEventListener(`commentUpdated-${tool.id}`, fetchCounts);
-        window.addEventListener(`likeUpdated-${tool.id}`, fetchCounts);
+        window.addEventListener(`commentUpdated-${tool.id}`, handleCommentUpdate);
+        window.addEventListener(`likeUpdated-${tool.id}`, handleLikeUpdate);
 
         return () => {
-            window.removeEventListener(`commentUpdated-${tool.id}`, fetchCounts);
-            window.removeEventListener(`likeUpdated-${tool.id}`, fetchCounts);
+            window.removeEventListener(`commentUpdated-${tool.id}`, handleCommentUpdate);
+            window.removeEventListener(`likeUpdated-${tool.id}`, handleLikeUpdate);
         };
     }, [tool.id]);
 
