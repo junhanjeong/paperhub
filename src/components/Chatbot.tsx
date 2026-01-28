@@ -23,9 +23,35 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
     const [showHelp, setShowHelp] = useState(false);
 
     const { messages, input, handleInputChange, handleSubmit, setMessages, isLoading, error } = useChat({
-        api: "/api/chat",
+        // Vercel 서버를 거치지 않고 사용자의 로컬 Ollama와 직접 통신
+        api: "http://localhost:11434/api/chat",
         body: {
-            context: pdfText,
+            model: "qwen3:4b-instruct-2507-q4_K_M",
+            stream: true,
+        },
+        // Ollama 직접 호출을 위한 커스텀 fetch (CORS 설정 필수)
+        fetch: async (url, options) => {
+            const body = JSON.parse(options?.body as string);
+
+            // Ollama API 포맷에 맞게 메시지 구조 변경 (System 프롬프트 포함)
+            const ollamaMessages = [
+                {
+                    role: "system",
+                    content: pdfText
+                        ? `당신은 연구 보조 AI입니다. 다음 제공된 문서 내용을 바탕으로 답변하세요.\n\n[문서 내용]\n${pdfText}`
+                        : "당신은 연구 보조 AI입니다. 연구와 관련된 질문에 전문적이고 친절하게 답변하세요."
+                },
+                ...body.messages
+            ];
+
+            return fetch(url, {
+                ...options,
+                body: JSON.stringify({
+                    model: body.model,
+                    messages: ollamaMessages,
+                    stream: true
+                })
+            });
         },
         onError: (err: any) => {
             console.error("Chat Error:", err);
@@ -179,17 +205,22 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
                             </h3>
                             <div className="space-y-6 text-xs text-slate-600 leading-relaxed">
                                 <section>
-                                    <h4 className="font-bold text-slate-900 mb-2">1. Ollama 설치</h4>
-                                    <p><a href="https://ollama.com" target="_blank" className="text-blue-600 underline">ollama.com</a>에서 본인의 OS에 맞는 버전을 내려받아 설치해 주세요.</p>
+                                    <h4 className="font-bold text-red-600 mb-2">1. 브라우저 접근 허용 (CORS 설정)</h4>
+                                    <p className="text-slate-600">배포된 환경에서 로컬 AI를 쓰려면 이 설정이 <strong>반드시</strong> 필요합니다. 터미널에 입력 후 Ollama를 재시작하세요.</p>
+                                    <div className="bg-slate-900 text-slate-300 p-3 rounded-xl mt-2 font-mono text-[9px] relative group">
+                                        <code>launchctl setenv OLLAMA_ORIGINS "*"</code>
+                                        <Icons.Copy className="absolute right-3 top-3 w-3 h-3 hover:text-white cursor-pointer opacity-50 group-hover:opacity-100" />
+                                    </div>
+                                    <p className="mt-2 text-[10px] text-slate-400 font-medium">* 윈도우 사용자는 시스템 환경 변수에서 <code>OLLAMA_ORIGINS</code>를 <code>*</code>로 추가하세요.</p>
                                 </section>
                                 <section>
                                     <h4 className="font-bold text-slate-900 mb-2">2. 모델 설치 (최초 1회)</h4>
-                                    <p>터미널을 열고 아래 명령어를 입력하여 모델을 내려받습니다.</p>
-                                    <div className="bg-slate-900 text-slate-300 p-3 rounded-xl mt-2 font-mono text-[10px] flex items-center justify-between">
+                                    <p>터미널에서 아래 명령어를 입력하여 모델을 내려받습니다.</p>
+                                    <div className="bg-slate-900 text-slate-300 p-3 rounded-xl mt-2 font-mono text-[9px] relative group">
                                         <code>ollama pull qwen3:4b-instruct-2507-q4_K_M</code>
-                                        <Icons.Copy className="w-3 h-3 hover:text-white cursor-pointer" />
+                                        <Icons.Copy className="absolute right-3 top-3 w-3 h-3 hover:text-white cursor-pointer opacity-50 group-hover:opacity-100" />
                                     </div>
-                                    <p className="mt-2 text-slate-400 font-medium">* 다운로드가 완료된 후에는 터미널을 닫고 Ollama 앱만 켜두시면 됩니다.</p>
+                                    <p className="mt-2 text-slate-400 font-medium">* 다운로드 후에는 Ollama 앱만 켜두시면 됩니다.</p>
                                 </section>
                                 <section>
                                     <h4 className="font-bold text-slate-900 mb-2">3. 파일 분석하기</h4>

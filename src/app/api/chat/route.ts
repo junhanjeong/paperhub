@@ -7,8 +7,11 @@ export async function POST(req: Request) {
     try {
         const { messages, context } = await req.json();
 
+        // 환경 변수가 있으면 사용하고 없으면 로컬 호스트 사용 (Vercel 배포 대응)
+        const ollamaBaseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434/api';
+
         const ollama = createOllama({
-            baseURL: 'http://localhost:11434/api',
+            baseURL: ollamaBaseUrl,
         });
 
         const systemPrompt = context
