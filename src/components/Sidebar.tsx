@@ -243,10 +243,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                                     </div>
                                 </div>
                                 <div className="text-4xl font-black text-slate-800 tracking-tighter">
-                                    {displayTime.toLocaleTimeString('ko-KR', { hour12: false })}
+                                    {isMounted
+                                        ? displayTime.toLocaleTimeString('ko-KR', { hour12: false })
+                                        : "--:--:--"}
                                 </div>
                                 <p className="text-[11px] text-slate-500 mt-1 font-medium italic">
-                                    {displayTime.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}
+                                    {isMounted
+                                        ? displayTime.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
+                                        : "Loading..."}
                                 </p>
                             </div>
 

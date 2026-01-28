@@ -38,18 +38,31 @@ export default function Home() {
 
   const toggleLike = async (id: number) => {
     const isCurrentlyLiked = userLikes.includes(id);
-    if (isCurrentlyLiked) return;
+    const isIncrement = !isCurrentlyLiked;
+
+    const previousUserLikes = [...userLikes];
+    const previousServerLikes = { ...serverLikes };
+
+    // 현재 점수 (서버에서 받은 값 없으면 기본 데이터 사용)
+    const currentCount = serverLikes[id] || toolsData.find(t => t.id === id)?.likes || 0;
+    const newCount = isIncrement ? currentCount + 1 : Math.max(0, currentCount - 1);
+
+    // 1. UI 즉시 업데이트 (0초 반응)
+    setUserLikes(prev => isIncrement ? [...prev, id] : prev.filter(l => l !== id));
+    setServerLikes(prev => ({ ...prev, [id]: newCount }));
+    window.dispatchEvent(new CustomEvent(`likeUpdated-${id}`, {
+      detail: { count: newCount }
+    }));
 
     try {
-      const currentCount = serverLikes[id] || toolsData.find(t => t.id === id)?.likes || 0;
-      await toggleLikeAction(id, currentCount);
-
-      setUserLikes(prev => [...prev, id]);
-      setServerLikes(prev => ({ ...prev, [id]: currentCount + 1 }));
-
-      // Notify other components (like ToolCard) to refresh counts
-      window.dispatchEvent(new CustomEvent(`likeUpdated-${id}`));
+      await toggleLikeAction(id, currentCount, isIncrement);
     } catch (e: any) {
+      // 2. 실패 시 롤백 (조용히 되돌림)
+      setUserLikes(previousUserLikes);
+      setServerLikes(previousServerLikes);
+      window.dispatchEvent(new CustomEvent(`likeUpdated-${id}`, {
+        detail: { count: currentCount }
+      }));
       alert(e.message || "좋아요 반영 실패");
     }
   };
@@ -164,6 +177,8 @@ export default function Home() {
           onClose={() => setSelectedToolId(null)}
           isLiked={userLikes.includes(selectedToolId)}
           onToggleLike={toggleLike}
+          initialLikeCount={serverLikes[selectedToolId] || toolsData.find(t => t.id === selectedToolId)?.likes || 0}
+          initialCommentCount={serverComments[selectedToolId] || 0}
         />
       )}
     </div>
