@@ -353,8 +353,32 @@ export const ToolModal: React.FC<ToolModalProps> = ({
                             </span>
                         </div>
 
-                        <div className="mb-6 space-y-2 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
-                            <div className="flex gap-2">
+                        <div className="space-y-4 mb-8">
+                            {comments.length === 0 ? (
+                                <p className="text-[11px] text-slate-400 py-10 text-center">의견이 없습니다.</p>
+                            ) : (
+                                comments.map((c, i) => (
+                                    <div key={i} className="p-4 bg-slate-50/50 border border-slate-100 rounded-2xl mb-2">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs font-extrabold text-slate-700">{c.nick}</span>
+                                                <span className="text-[10px] font-bold text-slate-300">{c.date}</span>
+                                            </div>
+                                            <button
+                                                onClick={() => handleDeleteComment(c.id)}
+                                                className="p-1 hover:bg-red-50 rounded group transition-colors"
+                                            >
+                                                <Icons.Trash2 className="w-3.5 h-3.5 text-slate-300 group-hover:text-red-500" />
+                                            </button>
+                                        </div>
+                                        <p className="text-xs text-slate-500 leading-relaxed">{c.text}</p>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+
+                        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                            <div className="flex gap-2 mb-2">
                                 <input
                                     type="text"
                                     value={nick}
@@ -386,30 +410,6 @@ export const ToolModal: React.FC<ToolModalProps> = ({
                                     등록
                                 </button>
                             </div>
-                        </div>
-
-                        <div className="space-y-4">
-                            {comments.length === 0 ? (
-                                <p className="text-[11px] text-slate-400 py-10 text-center">의견이 없습니다.</p>
-                            ) : (
-                                comments.map((c, i) => (
-                                    <div key={i} className="p-4 bg-slate-50/50 border border-slate-100 rounded-2xl mb-2">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-xs font-extrabold text-slate-700">{c.nick}</span>
-                                                <span className="text-[10px] font-bold text-slate-300">{c.date}</span>
-                                            </div>
-                                            <button
-                                                onClick={() => handleDeleteComment(c.id)}
-                                                className="p-1 hover:bg-red-50 rounded group transition-colors"
-                                            >
-                                                <Icons.Trash2 className="w-3.5 h-3.5 text-slate-300 group-hover:text-red-500" />
-                                            </button>
-                                        </div>
-                                        <p className="text-xs text-slate-500 leading-relaxed">{c.text}</p>
-                                    </div>
-                                ))
-                            )}
                         </div>
                     </div>
                 </div>
