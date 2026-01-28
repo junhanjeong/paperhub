@@ -171,7 +171,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                 </div>
 
                 {/* Content Pages */}
-                <div className={cn("flex-1", activePage !== 4 && "overflow-y-auto")}>
+                <div className={cn("flex-1 min-h-0", activePage !== 4 && "overflow-y-auto", activePage === 4 && "flex flex-col")}>
                     {activePage === 1 && (
                         <div className="space-y-5 animate-fadeIn">
                             {/* Focus Garden */}
@@ -425,7 +425,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                     )}
 
                     {activePage === 4 && (
-                        <div className="h-full animate-fadeIn pb-4">
+                        <div className="flex-1 flex flex-col min-h-0 animate-fadeIn pb-4">
                             <Chatbot isInline={true} />
                         </div>
                     )}

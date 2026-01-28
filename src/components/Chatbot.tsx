@@ -18,6 +18,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
     const [isProcessing, setIsProcessing] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
 
     const [showHelp, setShowHelp] = useState(false);
 
@@ -32,10 +33,36 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
     });
 
     useEffect(() => {
-        if (scrollRef.current) {
-            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        const scrollToBottom = () => {
+            if (scrollRef.current) {
+                scrollRef.current.scrollTo({
+                    top: scrollRef.current.scrollHeight,
+                    behavior: "smooth"
+                });
+            }
+        };
+
+        // 메시지가 추가되거나 로딩 상태가 변할 때(답변 스트리밍 중) 하단으로 이동
+        scrollToBottom();
+        const timeoutId = setTimeout(scrollToBottom, 50); // 렌더링 지연 대응
+        return () => clearTimeout(timeoutId);
+    }, [messages, isLoading]);
+
+    // Textarea 자동 높이 조절
+    useEffect(() => {
+        if (textareaRef.current) {
+            textareaRef.current.style.height = "auto";
+            textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 150)}px`;
         }
-    }, [messages]);
+    }, [input]);
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.nativeEvent.isComposing) return;
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            handleSubmit(e as any);
+        }
+    };
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -53,7 +80,8 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
                 ]);
             } catch (err: any) {
                 console.error("PDF Error:", err);
-                alert("PDF 분석 중 오류가 발생했습니다. (파일이 너무 크거나 보안이 걸려있을 수 있습니다)");
+                const errorMsg = err.message || "알 수 없는 에러";
+                alert(`PDF 분석 중 오류가 발생했습니다: ${errorMsg}`);
                 setAttachedFile(null);
             } finally {
                 setIsProcessing(false);
@@ -85,6 +113,14 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
         if (fileInputRef.current) fileInputRef.current.value = "";
     };
 
+    const handleNewChat = () => {
+        if (messages.length === 0 && !attachedFile) return;
+        if (confirm("대화 내역을 초기화하고 새 대화를 시작할까요?")) {
+            setMessages([]);
+            removeFile();
+        }
+    };
+
     const chatInterface = (
         <div className={cn(
             "bg-white flex flex-col overflow-hidden",
@@ -105,6 +141,13 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
+                    <button
+                        onClick={handleNewChat}
+                        className={cn("p-2 rounded-full transition-colors", isInline ? "hover:bg-slate-200" : "hover:bg-slate-800")}
+                        title="새 대화 시작"
+                    >
+                        <Icons.RotateCcw className="w-5 h-5 text-slate-400" />
+                    </button>
                     <button
                         onClick={() => setShowHelp(!showHelp)}
                         className={cn("p-2 rounded-full transition-colors", isInline ? "hover:bg-slate-200" : "hover:bg-slate-800")}
@@ -167,7 +210,10 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
                     )}
                 </AnimatePresence>
 
-                <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50">
+                <div
+                    ref={scrollRef}
+                    className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50 scroll-smooth min-h-0"
+                >
                     {messages.length === 0 && (
                         <div className="h-full flex flex-col items-center justify-center text-center space-y-4 px-10">
                             <div className="w-16 h-16 bg-white rounded-3xl shadow-sm flex items-center justify-center">
@@ -268,17 +314,19 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
                         accept=".pdf,.txt"
                         className="hidden"
                     />
-                    <input
-                        type="text"
+                    <textarea
+                        ref={textareaRef}
                         value={input}
                         onChange={handleInputChange}
+                        onKeyDown={handleKeyDown}
                         placeholder={attachedFile ? "파일 내용에 대해 물어보세요..." : "메시지를 입력하세요..."}
-                        className="flex-1 px-5 py-3 bg-slate-100 border-none rounded-2xl text-xs focus:ring-2 focus:ring-blue-600 transition-all outline-none"
+                        className="flex-1 px-5 py-3 bg-slate-100 border-none rounded-2xl text-xs focus:ring-2 focus:ring-blue-600 transition-all outline-none resize-none min-h-[46px] max-h-[150px] overflow-y-auto pt-4"
+                        rows={1}
                     />
                     <button
                         type="submit"
-                        disabled={isLoading || isProcessing}
-                        className="p-3 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200 disabled:opacity-50 disabled:shadow-none"
+                        disabled={isLoading || isProcessing || !input.trim()}
+                        className="p-3 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200 disabled:opacity-50 disabled:shadow-none h-[46px] w-[46px] shrink-0 flex items-center justify-center mt-auto"
                     >
                         <Icons.Send className="w-5 h-5" />
                     </button>
