@@ -8,21 +8,22 @@ self.onmessage = async (e: MessageEvent) => {
 
     if (type === "load") {
         try {
-            // WebLLM 엔진 초기화
-            engine = new webllm.MLCEngine();
+            // 진행 상황 콜백 함수
+            const progressCallback = (progress: webllm.InitProgressReport) => {
+                self.postMessage({
+                    type: "progress",
+                    data: {
+                        progress: progress.progress * 100,
+                        text: progress.text
+                    }
+                });
+            };
 
-            // 모델 로드 (진행 상황 콜백 포함)
-            await engine.reload(data.modelId || "Qwen2.5-3B-Instruct-q4f16_1-MLC", {
-                initProgressCallback: (progress: webllm.InitProgressReport) => {
-                    self.postMessage({
-                        type: "progress",
-                        data: {
-                            progress: progress.progress * 100,
-                            text: progress.text
-                        }
-                    });
-                }
-            });
+            // WebLLM 엔진 초기화 (진행 콜백을 생성자에 전달)
+            engine = new webllm.MLCEngine({ initProgressCallback: progressCallback });
+
+            // 모델 로드
+            await engine.reload(data.modelId || "Qwen2.5-0.5B-Instruct-q4f16_1-MLC");
 
             self.postMessage({ type: "status", data: "ready" });
         } catch (error: any) {
