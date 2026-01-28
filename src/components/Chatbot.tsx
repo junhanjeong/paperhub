@@ -206,12 +206,31 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
                             <div className="space-y-6 text-xs text-slate-600 leading-relaxed">
                                 <section>
                                     <h4 className="font-bold text-red-600 mb-2">1. 브라우저 접근 허용 (CORS 설정)</h4>
-                                    <p className="text-slate-600">배포된 환경에서 로컬 AI를 쓰려면 이 설정이 <strong>반드시</strong> 필요합니다. 터미널에 입력 후 Ollama를 재시작하세요.</p>
-                                    <div className="bg-slate-900 text-slate-300 p-3 rounded-xl mt-2 font-mono text-[9px] relative group">
-                                        <code>launchctl setenv OLLAMA_ORIGINS "*"</code>
-                                        <Icons.Copy className="absolute right-3 top-3 w-3 h-3 hover:text-white cursor-pointer opacity-50 group-hover:opacity-100" />
+                                    <p className="text-slate-600">웹사이트에서 내 컴퓨터의 AI를 인식할 수 있도록 통로를 열어줘야 합니다. 본인의 OS에 맞는 명령어를 터미널(또는 PowerShell)에 입력하세요.</p>
+
+                                    <div className="mt-4 space-y-4">
+                                        <div>
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase">macOS</span>
+                                            <div className="bg-slate-900 text-slate-300 p-3 rounded-xl mt-1 font-mono text-[9px] relative group">
+                                                <code>launchctl setenv OLLAMA_ORIGINS "*"</code>
+                                                <Icons.Copy className="absolute right-3 top-3 w-3 h-3 hover:text-white cursor-pointer opacity-50 group-hover:opacity-100" />
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase">Windows (PowerShell)</span>
+                                            <div className="bg-slate-900 text-slate-300 p-3 rounded-xl mt-1 font-mono text-[9px] relative group">
+                                                <code>[System.Environment]::SetEnvironmentVariable('OLLAMA_ORIGINS', '*', 'User')</code>
+                                                <Icons.Copy className="absolute right-3 top-3 w-3 h-3 hover:text-white cursor-pointer opacity-50 group-hover:opacity-100" />
+                                            </div>
+                                        </div>
                                     </div>
-                                    <p className="mt-2 text-[10px] text-slate-400 font-medium">* 윈도우 사용자는 시스템 환경 변수에서 <code>OLLAMA_ORIGINS</code>를 <code>*</code>로 추가하세요.</p>
+
+                                    <div className="mt-3 p-3 bg-amber-50 rounded-xl border border-amber-100">
+                                        <p className="text-[10px] text-amber-700 font-medium">
+                                            ⚠️ **중요**: 명령어를 입력한 후, 반드시 **Ollama 앱을 완전히 종료(Quit)**했다가 다시 실행해야 설정이 적용됩니다.
+                                        </p>
+                                    </div>
                                 </section>
                                 <section>
                                     <h4 className="font-bold text-slate-900 mb-2">2. 모델 설치 (최초 1회)</h4>
