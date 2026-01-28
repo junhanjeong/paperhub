@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import * as Icons from "lucide-react";
 import { Tool } from "@/data/tools";
 import { cn } from "@/lib/utils";
+import { getCommentCountAction, getLikesAction } from "@/lib/actions";
 
 interface ToolCardProps {
     tool: Tool;
@@ -11,6 +12,8 @@ interface ToolCardProps {
     onToggleFavorite: (id: number) => void;
     onOpenHowTo: (id: number) => void;
     isLiked: boolean;
+    initialCommentCount: number;
+    initialLikeCount: number;
 }
 
 export const ToolCard: React.FC<ToolCardProps> = ({
@@ -19,21 +22,41 @@ export const ToolCard: React.FC<ToolCardProps> = ({
     onToggleFavorite,
     onOpenHowTo,
     isLiked,
+    initialCommentCount,
+    initialLikeCount,
 }) => {
-    const [commentCount, setCommentCount] = useState(0);
+    const [commentCount, setCommentCount] = useState(initialCommentCount);
+    const [likeCount, setLikeCount] = useState(initialLikeCount);
+
+    // 전달받은 초기값이 바뀌면 상태 업데이트 (메인 페이지 로딩 완료 대응)
+    useEffect(() => {
+        setCommentCount(initialCommentCount);
+        setLikeCount(initialLikeCount);
+    }, [initialCommentCount, initialLikeCount]);
 
     useEffect(() => {
-        const updateCount = () => {
-            const savedComments = localStorage.getItem('paperhub-comments');
-            if (savedComments) {
-                const allComments = JSON.parse(savedComments);
-                setCommentCount((allComments[tool.id] || []).length);
+        const fetchCounts = async () => {
+            try {
+                const cCount = await getCommentCountAction(tool.id);
+                setCommentCount(cCount);
+
+                const lCount = await getLikesAction(tool.id);
+                // DB에 값이 있으면 쓰고, 없으면 기본값(tool.likes) 사용
+                if (lCount > 0) setLikeCount(lCount);
+                else setLikeCount(tool.likes);
+            } catch (e) {
+                console.error("Counts fetch error:", e);
             }
         };
 
-        updateCount();
-        window.addEventListener('storage', updateCount);
-        return () => window.removeEventListener('storage', updateCount);
+        // 모달에서 댓글이 달리거나 삭제되었을 때만 딱 한 번 실행
+        window.addEventListener(`commentUpdated-${tool.id}`, fetchCounts);
+        window.addEventListener(`likeUpdated-${tool.id}`, fetchCounts);
+
+        return () => {
+            window.removeEventListener(`commentUpdated-${tool.id}`, fetchCounts);
+            window.removeEventListener(`likeUpdated-${tool.id}`, fetchCounts);
+        };
     }, [tool.id]);
 
     // @ts-ignore
@@ -84,7 +107,7 @@ export const ToolCard: React.FC<ToolCardProps> = ({
                                     isLiked ? "text-blue-500 fill-blue-500" : "text-slate-300"
                                 )}
                             />
-                            <span>{tool.likes + (isLiked ? 1 : 0)}</span>
+                            <span>{likeCount}</span>
                         </div>
                         <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400">
                             <Icons.MessageSquare className="w-3.5 h-3.5 text-slate-300" />
