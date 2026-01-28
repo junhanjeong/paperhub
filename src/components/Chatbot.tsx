@@ -4,60 +4,34 @@ import React, { useState, useRef, useEffect } from "react";
 import * as Icons from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { useChat } from "ai/react";
 import { extractTextFromPDF } from "@/lib/pdf";
+
+interface Message {
+    id: string;
+    role: "user" | "assistant" | "system";
+    content: string;
+}
 
 interface ChatbotProps {
     isInline?: boolean;
 }
 
 export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
-    const [isOpen, setIsOpen] = useState(isInline); // Inline mode is always open
+    const [isOpen, setIsOpen] = useState(isInline);
     const [attachedFile, setAttachedFile] = useState<File | null>(null);
     const [pdfText, setPdfText] = useState("");
     const [isProcessing, setIsProcessing] = useState(false);
+    const [input, setInput] = useState("");
+    const [messages, setMessages] = useState<Message[]>([]);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [showHelp, setShowHelp] = useState(false);
+
     const fileInputRef = useRef<HTMLInputElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-    const [showHelp, setShowHelp] = useState(false);
-
-    const { messages, input, handleInputChange, handleSubmit, setMessages, isLoading, error } = useChat({
-        // Vercel 서버를 거치지 않고 사용자의 로컬 Ollama와 직접 통신
-        api: "http://localhost:11434/api/chat",
-        body: {
-            model: "qwen3:4b-instruct-2507-q4_K_M",
-            stream: true,
-        },
-        // Ollama 직접 호출을 위한 커스텀 fetch (CORS 설정 필수)
-        fetch: async (url, options) => {
-            const body = JSON.parse(options?.body as string);
-
-            // Ollama API 포맷에 맞게 메시지 구조 변경 (System 프롬프트 포함)
-            const ollamaMessages = [
-                {
-                    role: "system",
-                    content: pdfText
-                        ? `당신은 연구 보조 AI입니다. 다음 제공된 문서 내용을 바탕으로 답변하세요.\n\n[문서 내용]\n${pdfText}`
-                        : "당신은 연구 보조 AI입니다. 연구와 관련된 질문에 전문적이고 친절하게 답변하세요."
-                },
-                ...body.messages
-            ];
-
-            return fetch(url, {
-                ...options,
-                body: JSON.stringify({
-                    model: body.model,
-                    messages: ollamaMessages,
-                    stream: true
-                })
-            });
-        },
-        onError: (err: any) => {
-            console.error("Chat Error:", err);
-        }
-    });
-
+    // 자동 스크롤
     useEffect(() => {
         const scrollToBottom = () => {
             if (scrollRef.current) {
@@ -67,14 +41,12 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
                 });
             }
         };
-
-        // 메시지가 추가되거나 로딩 상태가 변할 때(답변 스트리밍 중) 하단으로 이동
         scrollToBottom();
-        const timeoutId = setTimeout(scrollToBottom, 50); // 렌더링 지연 대응
+        const timeoutId = setTimeout(scrollToBottom, 50);
         return () => clearTimeout(timeoutId);
     }, [messages, isLoading]);
 
-    // Textarea 자동 높이 조절
+    // 입력창 높이 조절
     useEffect(() => {
         if (textareaRef.current) {
             textareaRef.current.style.height = "auto";
@@ -82,11 +54,97 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
         }
     }, [input]);
 
+    const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        setInput(e.target.value);
+    };
+
+    const handleNewChat = () => {
+        if (messages.length === 0 && !attachedFile) return;
+        if (confirm("대화 내역을 초기화하고 새 대화를 시작할까요?")) {
+            setMessages([]);
+            setAttachedFile(null);
+            setPdfText("");
+            setInput("");
+            setError(null);
+            if (fileInputRef.current) fileInputRef.current.value = "";
+        }
+    };
+
+    const handleSubmit = async (e?: React.FormEvent) => {
+        if (e) e.preventDefault();
+        if (!input.trim() || isLoading || isProcessing) return;
+
+        const userMessage: Message = { id: Date.now().toString(), role: "user", content: input };
+        const newMessages = [...messages, userMessage];
+        setMessages(newMessages);
+        setInput("");
+        setIsLoading(true);
+        setError(null);
+
+        try {
+            // 브라우저에서 로컬 Ollama로 직접 FETCH (Vercel 서버 거치지 않음)
+            const response = await fetch("http://localhost:11434/api/chat", {
+                method: "POST",
+                body: JSON.stringify({
+                    model: "qwen3:4b-instruct-2507-q4_K_M",
+                    messages: [
+                        {
+                            role: "system",
+                            content: pdfText
+                                ? `당신은 연구 보조 AI입니다. 다음 제공된 문서 내용을 바탕으로 답변하세요.\n\n[문서 내용]\n${pdfText}`
+                                : "당신은 연구 보조 AI입니다. 연구와 관련된 질문에 전문적이고 친절하게 답변하세요."
+                        },
+                        ...newMessages.map(m => ({ role: m.role, content: m.content }))
+                    ],
+                    stream: true,
+                }),
+            });
+
+            if (!response.ok) throw new Error("Ollama 연결 실패. 설정 가이드를 확인해 주세요.");
+
+            const reader = response.body?.getReader();
+            const decoder = new TextDecoder();
+            let assistantMessageContent = "";
+            const assistantMessageId = (Date.now() + 1).toString();
+
+            // 초기 어시스턴트 메시지 추가
+            setMessages(prev => [...prev, { id: assistantMessageId, role: "assistant", content: "" }]);
+
+            while (true) {
+                const { done, value } = await reader!.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+                const lines = chunk.split('\n');
+
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+                    try {
+                        const json = JSON.parse(line);
+                        if (json.message?.content) {
+                            assistantMessageContent += json.message.content;
+                            setMessages(prev => prev.map(m =>
+                                m.id === assistantMessageId ? { ...m, content: assistantMessageContent } : m
+                            ));
+                        }
+                    } catch (e) {
+                        console.warn("JSON 파싱 에러:", e);
+                    }
+                }
+            }
+        } catch (err: any) {
+            console.error("Chat Error:", err);
+            setError("로컬 Ollama 연결에 실패했습니다. (CORS 설정 또는 Ollama 실행 확인 필요)");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.nativeEvent.isComposing) return;
         if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
-            handleSubmit(e as any);
+            handleSubmit();
         }
     };
 
@@ -100,12 +158,11 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
             try {
                 const text = await extractTextFromPDF(file);
                 setPdfText(text);
-                setMessages([
-                    ...messages,
-                    { id: Date.now().toString(), role: "system" as any, content: `📎 PDF 파일("${file.name}") 분석 완료! 이제 이 문서에 대해 물어보세요.` }
+                setMessages(prev => [
+                    ...prev,
+                    { id: Date.now().toString(), role: "system", content: `📎 PDF 파일("${file.name}") 분석 완료! 이제 이 문서에 대해 물어보세요.` }
                 ]);
             } catch (err: any) {
-                console.error("PDF Error:", err);
                 const errorMsg = err.message || "알 수 없는 에러";
                 alert(`PDF 분석 중 오류가 발생했습니다: ${errorMsg}`);
                 setAttachedFile(null);
@@ -118,9 +175,9 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
             try {
                 const text = await file.text();
                 setPdfText(text);
-                setMessages([
-                    ...messages,
-                    { id: Date.now().toString(), role: "system" as any, content: `📝 텍스트 파일("${file.name}") 분석 완료! 내용에 대해 대화를 시작합니다.` }
+                setMessages(prev => [
+                    ...prev,
+                    { id: Date.now().toString(), role: "system", content: `📝 텍스트 파일("${file.name}") 분석 완료! 내용에 대해 대화를 시작합니다.` }
                 ]);
             } catch (err: any) {
                 alert("파일을 읽는 중 오류가 발생했습니다.");
@@ -137,14 +194,6 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
         setAttachedFile(null);
         setPdfText("");
         if (fileInputRef.current) fileInputRef.current.value = "";
-    };
-
-    const handleNewChat = () => {
-        if (messages.length === 0 && !attachedFile) return;
-        if (confirm("대화 내역을 초기화하고 새 대화를 시작할까요?")) {
-            setMessages([]);
-            removeFile();
-        }
     };
 
     const chatInterface = (
@@ -191,7 +240,6 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
 
             {/* Messages Content */}
             <div className="flex-1 relative overflow-hidden flex flex-col">
-                {/* Help Overlay */}
                 <AnimatePresence>
                     {showHelp && (
                         <motion.div
@@ -207,7 +255,6 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
                                 <section>
                                     <h4 className="font-bold text-red-600 mb-2">1. 브라우저 접근 허용 (CORS 설정)</h4>
                                     <p className="text-slate-600">웹사이트에서 내 컴퓨터의 AI를 인식할 수 있도록 통로를 열어줘야 합니다. 본인의 OS에 맞는 명령어를 터미널(또는 PowerShell)에 입력하세요.</p>
-
                                     <div className="mt-4 space-y-4">
                                         <div>
                                             <span className="text-[10px] font-bold text-slate-400 uppercase">macOS</span>
@@ -216,7 +263,6 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
                                                 <Icons.Copy className="absolute right-3 top-3 w-3 h-3 hover:text-white cursor-pointer opacity-50 group-hover:opacity-100" />
                                             </div>
                                         </div>
-
                                         <div>
                                             <span className="text-[10px] font-bold text-slate-400 uppercase">Windows (PowerShell)</span>
                                             <div className="bg-slate-900 text-slate-300 p-3 rounded-xl mt-1 font-mono text-[9px] relative group">
@@ -225,7 +271,6 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
                                             </div>
                                         </div>
                                     </div>
-
                                     <div className="mt-3 p-3 bg-amber-50 rounded-xl border border-amber-100">
                                         <p className="text-[10px] text-amber-700 font-medium">
                                             ⚠️ **중요**: 명령어를 입력한 후, 반드시 **Ollama 앱을 완전히 종료(Quit)**했다가 다시 실행해야 설정이 적용됩니다.
@@ -246,24 +291,13 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
                                     <p>하단의 클립(📎) 아이콘을 눌러 <strong>PDF 또는 TXT</strong> 파일을 업로드하면 AI가 내용을 읽고 답변을 준비합니다.</p>
                                     <p className="mt-1 text-[10px] text-slate-400 font-medium">* 표(Excel)나 이미지 분석 기능은 추후 업데이트 예정입니다.</p>
                                 </section>
-                                <div className="pt-4 border-t border-slate-100 italic text-[10px] text-slate-400">
-                                    * 모든 데이터는 본인 PC에서만 처리되며 외부로 전송되지 않습니다.
-                                </div>
-                                <button
-                                    onClick={() => setShowHelp(false)}
-                                    className="w-full py-3 bg-slate-900 text-white font-bold rounded-xl mt-4"
-                                >
-                                    이해했습니다
-                                </button>
+                                <button onClick={() => setShowHelp(false)} className="w-full py-3 bg-slate-900 text-white font-bold rounded-xl mt-4">이해했습니다</button>
                             </div>
                         </motion.div>
                     )}
                 </AnimatePresence>
 
-                <div
-                    ref={scrollRef}
-                    className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50 scroll-smooth min-h-0"
-                >
+                <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50 scroll-smooth min-h-0">
                     {messages.length === 0 && (
                         <div className="h-full flex flex-col items-center justify-center text-center space-y-4 px-10">
                             <div className="w-16 h-16 bg-white rounded-3xl shadow-sm flex items-center justify-center">
@@ -275,18 +309,9 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
                             </div>
                         </div>
                     )}
-                    {messages.map((m: any) => (
+                    {messages.map((m) => (
                         <div key={m.id} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
-                            <div
-                                className={cn(
-                                    "max-w-[85%] p-4 rounded-3xl text-xs leading-relaxed shadow-sm",
-                                    m.role === "user"
-                                        ? "bg-blue-600 text-white rounded-tr-none"
-                                        : m.role === "system"
-                                            ? "bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-tl-none italic"
-                                            : "bg-white text-slate-700 border border-slate-100 rounded-tl-none"
-                                )}
-                            >
+                            <div className={cn("max-w-[85%] p-4 rounded-3xl text-xs leading-relaxed shadow-sm", m.role === "user" ? "bg-blue-600 text-white rounded-tr-none" : m.role === "system" ? "bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-tl-none italic" : "bg-white text-slate-700 border border-slate-100 rounded-tl-none whitespace-pre-wrap")}>
                                 {m.content}
                             </div>
                         </div>
@@ -302,7 +327,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
                     )}
                     {error && (
                         <div className="p-3 bg-red-50 text-red-600 text-[10px] rounded-2xl border border-red-100">
-                            ⚠️ 오류: Ollama가 실행 중인지 확인해 주세요. (qwen3 모델 필요)
+                            ⚠️ {error}
                         </div>
                     )}
                 </div>
@@ -311,31 +336,16 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
             {/* File Area */}
             <AnimatePresence>
                 {(attachedFile || isProcessing) && (
-                    <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        className="px-6 py-3 bg-white border-t border-slate-50 overflow-hidden"
-                    >
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="px-6 py-3 bg-white border-t border-slate-50 overflow-hidden">
                         <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl border border-slate-100">
                             <div className="flex items-center gap-3">
-                                <div className="p-2 bg-blue-100 rounded-lg text-blue-600">
-                                    <Icons.FileText className="w-4 h-4" />
-                                </div>
+                                <div className="p-2 bg-blue-100 rounded-lg text-blue-600"><Icons.FileText className="w-4 h-4" /></div>
                                 <div className="flex flex-col">
-                                    <span className="text-[10px] font-bold text-slate-700 truncate max-w-[150px]">
-                                        {isProcessing ? "분석 중..." : attachedFile?.name}
-                                    </span>
-                                    <span className="text-[8px] text-slate-400 capitalize">
-                                        {isProcessing ? "내용을 읽고 있습니다..." : (attachedFile?.type === "application/pdf" ? "PDF Document" : "Text Document")}
-                                    </span>
+                                    <span className="text-[10px] font-bold text-slate-700 truncate max-w-[150px]">{isProcessing ? "분석 중..." : attachedFile?.name}</span>
+                                    <span className="text-[8px] text-slate-400 capitalize">{isProcessing ? "내용을 읽고 있습니다..." : (attachedFile?.type === "application/pdf" ? "PDF Document" : "Text Document")}</span>
                                 </div>
                             </div>
-                            {!isProcessing && (
-                                <button onClick={removeFile} className="p-1.5 hover:bg-slate-200 rounded-full transition-colors">
-                                    <Icons.X className="w-3 h-3 text-slate-500" />
-                                </button>
-                            )}
+                            {!isProcessing && <button onClick={removeFile} className="p-1.5 hover:bg-slate-200 rounded-full transition-colors"><Icons.X className="w-3 h-3 text-slate-500" /></button>}
                         </div>
                     </motion.div>
                 )}
@@ -343,47 +353,13 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
 
             {/* Input Area */}
             <div className="p-6 bg-white shrink-0">
-                <form
-                    onSubmit={(e) => {
-                        e.preventDefault();
-                        handleSubmit(e);
-                    }}
-                    className="flex gap-2"
-                >
-                    <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="p-3 bg-slate-100 text-slate-500 rounded-2xl hover:bg-slate-200 transition-colors"
-                    >
-                        <Icons.Paperclip className="w-5 h-5" />
-                    </button>
-                    <input
-                        type="file"
-                        ref={fileInputRef}
-                        onChange={handleFileChange}
-                        accept=".pdf,.txt"
-                        className="hidden"
-                    />
-                    <textarea
-                        ref={textareaRef}
-                        value={input}
-                        onChange={handleInputChange}
-                        onKeyDown={handleKeyDown}
-                        placeholder={attachedFile ? "파일 내용에 대해 물어보세요..." : "메시지를 입력하세요..."}
-                        className="flex-1 px-5 py-3 bg-slate-100 border-none rounded-2xl text-xs focus:ring-2 focus:ring-blue-600 transition-all outline-none resize-none min-h-[46px] max-h-[150px] overflow-y-auto pt-4"
-                        rows={1}
-                    />
-                    <button
-                        type="submit"
-                        disabled={isLoading || isProcessing || !input.trim()}
-                        className="p-3 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200 disabled:opacity-50 disabled:shadow-none h-[46px] w-[46px] shrink-0 flex items-center justify-center mt-auto"
-                    >
-                        <Icons.Send className="w-5 h-5" />
-                    </button>
+                <form onSubmit={handleSubmit} className="flex gap-2">
+                    <button type="button" onClick={() => fileInputRef.current?.click()} className="p-3 bg-slate-100 text-slate-500 rounded-2xl hover:bg-slate-200 transition-colors"><Icons.Paperclip className="w-5 h-5" /></button>
+                    <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".pdf,.txt" className="hidden" />
+                    <textarea ref={textareaRef} value={input} onChange={handleInputChange} onKeyDown={handleKeyDown} placeholder={attachedFile ? "파일 내용에 대해 물어보세요..." : "메시지를 입력하세요..."} className="flex-1 px-5 py-3 bg-slate-100 border-none rounded-2xl text-xs focus:ring-2 focus:ring-blue-600 transition-all outline-none resize-none min-h-[46px] max-h-[150px] overflow-y-auto pt-4" rows={1} />
+                    <button type="submit" disabled={isLoading || isProcessing || !input.trim()} className="p-3 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200 disabled:opacity-50 disabled:shadow-none h-[46px] w-[46px] shrink-0 flex items-center justify-center mt-auto"><Icons.Send className="w-5 h-5" /></button>
                 </form>
-                <p className="text-[9px] text-slate-400 mt-4 text-center">
-                    Local Engine: Ollama / Model: qwen3:4b-instruct
-                </p>
+                <p className="text-[9px] text-slate-400 mt-4 text-center">Local Engine: Ollama / Model: qwen3:4b-instruct</p>
             </div>
         </div>
     );
@@ -393,29 +369,10 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
     return (
         <div className="fixed bottom-6 right-6 z-[100]">
             <AnimatePresence>
-                {isOpen && (
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.9, y: 20 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                    >
-                        {chatInterface}
-                    </motion.div>
-                )}
+                {isOpen && <motion.div initial={{ opacity: 0, scale: 0.9, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 20 }}>{chatInterface}</motion.div>}
             </AnimatePresence>
-
-            <button
-                onClick={() => setIsOpen(!isOpen)}
-                className={cn(
-                    "w-16 h-16 rounded-[2rem] flex items-center justify-center shadow-2xl transition-all hover:scale-105 active:scale-95 group",
-                    isOpen ? "bg-slate-900 text-white" : "bg-blue-600 text-white"
-                )}
-            >
-                {isOpen ? (
-                    <Icons.ChevronDown className="w-7 h-7" />
-                ) : (
-                    <Icons.Sparkles className="w-7 h-7 group-hover:rotate-12 transition-transform" />
-                )}
+            <button onClick={() => setIsOpen(!isOpen)} className={cn("w-16 h-16 rounded-[2rem] flex items-center justify-center shadow-2xl transition-all hover:scale-105 active:scale-95 group", isOpen ? "bg-slate-900 text-white" : "bg-blue-600 text-white")}>
+                {isOpen ? <Icons.ChevronDown className="w-7 h-7" /> : <Icons.Sparkles className="w-7 h-7 group-hover:rotate-12 transition-transform" />}
             </button>
         </div>
     );
