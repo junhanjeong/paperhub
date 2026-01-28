@@ -9,7 +9,7 @@ import { ToolModal } from "@/components/ToolModal";
 import { toolsData, Tool } from "@/data/tools";
 import { cn } from "@/lib/utils";
 
-import { toggleLikeAction, getLikesAction } from "@/lib/actions";
+import { toggleLikeAction, getLikesAction, getAllStatsAction } from "@/lib/actions";
 
 export default function Home() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -17,39 +17,40 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [favorites, setFavorites] = useState<number[]>([]);
   const [userLikes, setUserLikes] = useState<number[]>([]);
+  const [serverLikes, setServerLikes] = useState<{ [key: number]: number }>({});
+  const [serverComments, setServerComments] = useState<{ [key: number]: number }>({});
   const [selectedToolId, setSelectedToolId] = useState<number | null>(null);
 
   useEffect(() => {
-    const savedFavs = localStorage.getItem('paperhub-favs');
-    if (savedFavs) setFavorites(JSON.parse(savedFavs));
-
-    const savedLikes = localStorage.getItem('paperhub-user-likes');
-    if (savedLikes) setUserLikes(JSON.parse(savedLikes));
+    const fetchAllStats = async () => {
+      const { commentCounts, likeCounts } = await getAllStatsAction();
+      setServerComments(commentCounts);
+      setServerLikes(likeCounts);
+    };
+    fetchAllStats();
   }, []);
 
   const toggleFavorite = (id: number) => {
-    const newFavs = favorites.includes(id)
-      ? favorites.filter((f) => f !== id)
-      : [...favorites, id];
-    setFavorites(newFavs);
-    localStorage.setItem('paperhub-favs', JSON.stringify(newFavs));
+    setFavorites(prev =>
+      prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]
+    );
   };
 
   const toggleLike = async (id: number) => {
-    const tool = toolsData.find(t => t.id === id);
-    if (!tool) return;
-
     const isCurrentlyLiked = userLikes.includes(id);
-    const newLikes = isCurrentlyLiked
-      ? userLikes.filter((l) => l !== id)
-      : [...userLikes, id];
+    if (isCurrentlyLiked) return;
 
-    setUserLikes(newLikes);
-    localStorage.setItem('paperhub-user-likes', JSON.stringify(newLikes));
+    try {
+      const currentCount = serverLikes[id] || toolsData.find(t => t.id === id)?.likes || 0;
+      await toggleLikeAction(id, currentCount);
 
-    // 공유 서버로 좋아요 전송 (해제 로직은 생략/추가 기능)
-    if (!isCurrentlyLiked) {
-      await toggleLikeAction(id, tool.likes);
+      setUserLikes(prev => [...prev, id]);
+      setServerLikes(prev => ({ ...prev, [id]: currentCount + 1 }));
+
+      // Notify other components (like ToolCard) to refresh counts
+      window.dispatchEvent(new CustomEvent(`likeUpdated-${id}`));
+    } catch (e: any) {
+      alert(e.message || "좋아요 반영 실패");
     }
   };
 
@@ -136,6 +137,8 @@ export default function Home() {
                 onToggleFavorite={toggleFavorite}
                 onOpenHowTo={() => setSelectedToolId(tool.id)}
                 isLiked={userLikes.includes(tool.id)}
+                initialCommentCount={serverComments[tool.id] || 0}
+                initialLikeCount={serverLikes[tool.id] || tool.likes}
               />
             </div>
           ))}

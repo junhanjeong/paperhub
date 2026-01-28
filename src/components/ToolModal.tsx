@@ -12,7 +12,7 @@ interface ToolModalProps {
     onToggleLike: (id: number) => void;
 }
 
-import { getCommentsAction, addCommentAction, deleteCommentAction, toggleLikeAction } from "@/lib/actions";
+import { getCommentsAction, addCommentAction, deleteCommentAction, getLikesAction } from "@/lib/actions";
 
 export const ToolModal: React.FC<ToolModalProps> = ({
     toolId,
@@ -26,6 +26,7 @@ export const ToolModal: React.FC<ToolModalProps> = ({
     const [password, setPassword] = useState("");
     const [commentText, setCommentText] = useState("");
     const [isLoading, setIsLoading] = useState(true);
+    const [likeCount, setLikeCount] = useState(tool?.likes || 0);
 
     // Calculator State
     const [baseValue, setBaseValue] = useState("");
@@ -37,12 +38,10 @@ export const ToolModal: React.FC<ToolModalProps> = ({
     const [showCopyMessage, setShowCopyMessage] = useState(false);
 
     useEffect(() => {
-        const loadComments = async () => {
+        const loadData = async () => {
             setIsLoading(true);
-            // 서버에서 데이터 가져오기 시도
-            const serverComments = await getCommentsAction(toolId);
-
-            if (serverComments && serverComments.length > 0) {
+            try {
+                const serverComments = await getCommentsAction(toolId);
                 setComments(serverComments.map((c: any) => ({
                     id: c.id,
                     nick: c.nick,
@@ -50,18 +49,25 @@ export const ToolModal: React.FC<ToolModalProps> = ({
                     password: c.password,
                     date: new Date(c.created_at).toLocaleString('ko-KR')
                 })));
-            } else {
-                // 서버 데이터가 없거나 설정 전이면 로컬 스토리지 사용
-                const savedComments = localStorage.getItem("paperhub-comments");
-                if (savedComments) {
-                    const allComments = JSON.parse(savedComments);
-                    setComments(allComments[toolId] || []);
-                }
+
+                const lCount = await getLikesAction(toolId);
+                if (lCount > 0) setLikeCount(lCount);
+            } catch (e: any) {
+                console.error("데이터 로딩 실패:", e);
+                alert(e.message || "데이터베이스 연결에 실패했습니다.");
+            } finally {
+                setIsLoading(false);
             }
-            setIsLoading(false);
         };
 
-        loadComments();
+        loadData();
+
+        const handleLikeUpdate = async () => {
+            const lCount = await getLikesAction(toolId);
+            if (lCount > 0) setLikeCount(lCount);
+        };
+        window.addEventListener(`likeUpdated-${toolId}`, handleLikeUpdate);
+        return () => window.removeEventListener(`likeUpdated-${toolId}`, handleLikeUpdate);
     }, [toolId]);
 
     if (!tool) return null;
@@ -74,71 +80,60 @@ export const ToolModal: React.FC<ToolModalProps> = ({
             return;
         }
 
-        const newComment = {
-            id: Math.random().toString(36).substr(2, 9),
+        const commentData = {
             nick: nick || "연구자",
             text: commentText,
             password: password,
-            date: new Date().toLocaleDateString("ko-KR") + " " + new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }),
         };
 
-        // 1. 서버 전송 시도
-        const result = await addCommentAction(toolId, newComment);
+        try {
+            const result = await addCommentAction(toolId, commentData);
+            if (result && result.success) {
+                // 목록 갱신
+                const serverComments = await getCommentsAction(toolId);
+                setComments(serverComments.map((c: any) => ({
+                    id: c.id,
+                    nick: c.nick,
+                    text: c.text,
+                    password: c.password,
+                    date: new Date(c.created_at).toLocaleString('ko-KR')
+                })));
 
-        // 2. 서버 성공 시 목록 갱신, 실패 시(DB 설정 전 등) 로컬 저장
-        if (result && result.success) {
-            const serverComments = await getCommentsAction(toolId);
-            setComments(serverComments.map((c: any) => ({
-                id: c.id,
-                nick: c.nick,
-                text: c.text,
-                password: c.password,
-                date: new Date(c.created_at).toLocaleString('ko-KR')
-            })));
-        } else {
-            const updatedComments = [newComment, ...comments];
-            setComments(updatedComments);
-            const savedComments = localStorage.getItem("paperhub-comments");
-            const allComments = savedComments ? JSON.parse(savedComments) : {};
-            allComments[toolId] = updatedComments;
-            localStorage.setItem("paperhub-comments", JSON.stringify(allComments));
-            window.dispatchEvent(new Event('storage'));
+                // 메인 페이지 카운트 업데이트를 위한 이벤트 발생
+                window.dispatchEvent(new CustomEvent(`commentUpdated-${toolId}`));
+
+                setNick("");
+                setPassword("");
+                setCommentText("");
+            }
+        } catch (e: any) {
+            alert(e.message || "댓글 등록 중 오류가 발생했습니다.");
         }
-
-        setNick("");
-        setPassword("");
-        setCommentText("");
     };
 
-    const handleDeleteComment = async (id: string, originalPw?: string) => {
+    const handleDeleteComment = async (id: string) => {
         const inputPw = prompt("비밀번호를 입력하세요:");
         if (inputPw === null) return;
 
-        // 1. 서버 삭제 시도
-        const result = await deleteCommentAction(id, inputPw);
+        try {
+            const result = await deleteCommentAction(id, inputPw);
+            if (result && result.success) {
+                const serverComments = await getCommentsAction(toolId);
+                setComments(serverComments.map((c: any) => ({
+                    id: c.id,
+                    nick: c.nick,
+                    text: c.text,
+                    password: c.password,
+                    date: new Date(c.created_at).toLocaleString('ko-KR')
+                })));
 
-        if (result && result.success) {
-            const serverComments = await getCommentsAction(toolId);
-            setComments(serverComments.map((c: any) => ({
-                id: c.id,
-                nick: c.nick,
-                text: c.text,
-                password: c.password,
-                date: new Date(c.created_at).toLocaleString('ko-KR')
-            })));
-        } else {
-            // 서버에서 처리하지 못한 경우 (로컬 데이터이거나 서버 설정 전)
-            if (inputPw === originalPw) {
-                const updatedComments = comments.filter((c) => c.id !== id);
-                setComments(updatedComments);
-                const savedComments = localStorage.getItem("paperhub-comments");
-                const allComments = savedComments ? JSON.parse(savedComments) : {};
-                allComments[toolId] = updatedComments;
-                localStorage.setItem("paperhub-comments", JSON.stringify(allComments));
-                window.dispatchEvent(new Event('storage'));
-            } else {
-                alert("비밀번호가 일치하지 않거나 서버 오류가 발생했습니다.");
+                // 메인 페이지 카운트 업데이트를 위한 이벤트 발생
+                window.dispatchEvent(new CustomEvent(`commentUpdated-${toolId}`));
+            } else if (result && !result.success) {
+                alert(result.message);
             }
+        } catch (e: any) {
+            alert(e.message || "댓글 삭제 중 오류가 발생했습니다.");
         }
     };
 
@@ -208,7 +203,7 @@ export const ToolModal: React.FC<ToolModalProps> = ({
                                 )}
                             >
                                 <Icons.ThumbsUp className={cn("w-4 h-4 transition-all", isLiked ? "text-blue-500 fill-blue-500" : "text-slate-300 group-hover:text-blue-500")} />
-                                <span className="text-xs font-bold text-slate-600">{tool.likes + (isLiked ? 1 : 0)}</span>
+                                <span className="text-xs font-bold text-slate-600">{likeCount}</span>
                             </button>
                             <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
                                 <Icons.X className="w-6 h-6 text-slate-400" />
@@ -366,7 +361,7 @@ export const ToolModal: React.FC<ToolModalProps> = ({
                                                 <span className="text-[10px] font-bold text-slate-300">{c.date}</span>
                                             </div>
                                             <button
-                                                onClick={() => handleDeleteComment(c.id, c.password)}
+                                                onClick={() => handleDeleteComment(c.id)}
                                                 className="p-1 hover:bg-red-50 rounded group transition-colors"
                                             >
                                                 <Icons.Trash2 className="w-3.5 h-3.5 text-slate-300 group-hover:text-red-500" />
