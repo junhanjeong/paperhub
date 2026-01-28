@@ -22,7 +22,7 @@ const AVAILABLE_MODELS = [
     { id: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC", name: "Qwen2.5 1.5B", size: "~1GB" },
     { id: "Qwen2.5-3B-Instruct-q4f16_1-MLC", name: "Qwen2.5 3B", size: "~2GB" },
     { id: "Llama-3.2-3B-Instruct-q4f16_1-MLC", name: "Llama 3.2 3B", size: "~2GB" },
-    { id: "Phi-3.5-mini-instruct-q4f16_1-MLC", name: "Phi-3.5 Mini", size: "~2.5GB" },
+    { id: "Phi-4-mini-instruct-q4f16_1-MLC", name: "Phi-4 Mini 3.8B", size: "~2.5GB" },
 ];
 
 export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
@@ -40,6 +40,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
     const [modelStatus, setModelStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
     const [downloadProgress, setDownloadProgress] = useState(0);
     const [statusMessage, setStatusMessage] = useState("");
+    const [downloadedSize, setDownloadedSize] = useState("");
     const [selectedModel, setSelectedModel] = useState(AVAILABLE_MODELS[0]);
 
     const workerRef = useRef<Worker | null>(null);
@@ -76,6 +77,13 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
                 setModelStatus("loading");
                 setDownloadProgress(Math.round(data.progress || 0));
                 setStatusMessage(data.text || "로딩 중...");
+                // 용량 정보 파싱 (예: "Fetching param cache[0/5]: 124.5MB / 400MB")
+                if (data.text) {
+                    const sizeMatch = data.text.match(/([\d.]+)\s*(MB|GB)\s*\/\s*([\d.]+)\s*(MB|GB)/i);
+                    if (sizeMatch) {
+                        setDownloadedSize(`${sizeMatch[1]}${sizeMatch[2]} / ${sizeMatch[3]}${sizeMatch[4]}`);
+                    }
+                }
             }
 
             if (type === "chunk") {
@@ -278,7 +286,10 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isInline = false }) => {
                             <Icons.Download className="w-5 h-5 text-blue-600 animate-bounce" />
                         </div>
                         <div className="flex-1">
-                            <p className="text-sm font-bold text-slate-700">{selectedModel.name} 로딩 중</p>
+                            <div className="flex items-center justify-between">
+                                <p className="text-sm font-bold text-slate-700">{selectedModel.name} 로딩 중</p>
+                                {downloadedSize && <p className="text-xs font-mono text-blue-600">{downloadedSize}</p>}
+                            </div>
                             <p className="text-[10px] text-slate-500 truncate">{statusMessage}</p>
                         </div>
                     </div>
