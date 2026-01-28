@@ -169,8 +169,6 @@ export default function Home() {
         <p>&copy; 2024 PaperHub. 연구자들을 위한 스마트한 길잡이.</p>
       </footer>
 
-      <Chatbot />
-
       {selectedToolId && (
         <ToolModal
           toolId={selectedToolId}
